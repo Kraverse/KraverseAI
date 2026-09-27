@@ -5,9 +5,10 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .ollama import chat
+from .online import chat_online
 from .rag import RAGStore, ollama_embed
 
-app = FastAPI(title="KraVerse AI API", version="0.1.0")
+app = FastAPI(title="KraVerse AI API", version="0.2.0")
 store = RAGStore(settings.database_path)
 
 
@@ -18,7 +19,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "local"}
+    return {"status": "ok", "mode": "local+online"}
 
 
 @app.get("/health/ollama")
@@ -38,11 +39,21 @@ async def chat_endpoint(request: ChatRequest) -> dict:
     try:
         query_embedding = await ollama_embed(request.message, settings.ollama_url, settings.embedding_model)
         results = store.search(query_embedding, request.top_k or settings.top_k)
-        context = "\n\n".join(
-            f"SOURCE: {item['source']}\n{item['content']}" for item in results
-        )
+        context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
         prompt = f"""You are KraVerse AI, a personal project and portfolio assistant.\nAnswer using the supplied context. Do not invent facts. If the context does not contain the answer, say that you do not have enough verified information.\n\nCONTEXT:\n{context or '(No indexed knowledge yet.)'}\n\nUSER QUESTION:\n{request.message}"""
         answer = await chat(prompt, settings.chat_model, settings.ollama_url)
-        return {"answer": answer, "sources": [item["source"] for item in results]}
+        return {"answer": answer, "sources": [item["source"] for item in results], "mode": "local"}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/chat/online")
+async def online_chat_endpoint(request: ChatRequest) -> dict:
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=503, detail="Online provider is not configured")
+    try:
+        prompt = f"""You are KraVerse AI, Kartik Katke's portfolio assistant. Answer clearly and honestly. Only state personal/project facts supplied by the user or by the portfolio knowledge context. If information is missing, say so.\n\nUSER QUESTION:\n{request.message}"""
+        answer = await chat_online(prompt, settings.openrouter_api_key, settings.openrouter_model, settings.openrouter_url)
+        return {"answer": answer, "sources": [], "mode": "online", "model": settings.openrouter_model}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

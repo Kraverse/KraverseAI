@@ -7,9 +7,11 @@ class Settings(BaseSettings):
     embedding_model: str = "nomic-embed-text"
     top_k: int = 5
     database_path: str = "data/knowledge.db"
-    openrouter_api_key: str = ""
-    openrouter_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "openrouter/free"
+
+    llm_provider: str = "openrouter"
+    llm_api_key: str = ""
+    llm_model: str = "openrouter/free"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="KRAVERSE_", extra="ignore")
 

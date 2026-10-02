@@ -10,7 +10,7 @@ from .ollama import chat
 from .online import chat_online
 from .rag import RAGStore, ollama_embed
 
-app = FastAPI(title="KraVerse AI API", version="0.3.0")
+app = FastAPI(title="KraVerse AI API", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,9 +26,20 @@ class ChatRequest(BaseModel):
     top_k: int | None = Field(default=None, ge=1, le=10)
 
 
+@app.get("/")
+async def root() -> dict[str, str]:
+    return {
+        "name": "KraVerse AI API",
+        "status": "ok",
+        "version": app.version,
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "local+online"}
+    return {"status": "ok", "mode": "local+online", "provider": settings.llm_provider}
 
 
 @app.get("/health/ollama")
@@ -53,18 +64,20 @@ async def chat_endpoint(request: ChatRequest) -> dict:
         answer = await chat(prompt, settings.chat_model, settings.ollama_url)
         return {"answer": answer, "sources": [item["source"] for item in results], "mode": "local"}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail="Local AI request failed") from exc
 
 
 @app.post("/chat/online")
 async def online_chat_endpoint(request: ChatRequest) -> dict:
-    if not settings.openrouter_api_key:
+    if settings.llm_provider.lower() != "openrouter":
+        raise HTTPException(status_code=503, detail=f"Unsupported online provider: {settings.llm_provider}")
+    if not settings.llm_api_key:
         raise HTTPException(status_code=503, detail="Online provider is not configured")
     try:
         results = retrieve(request.message, request.top_k or settings.top_k)
         context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
         prompt = f"""You are KraVerse AI, Kartik Katke's portfolio assistant. Answer clearly and honestly. Use ONLY the verified context below for personal and project facts. Do not invent missing details. If the context is insufficient, say that you do not have enough verified information.\n\nVERIFIED CONTEXT:\n{context or '(No matching verified knowledge found.)'}\n\nUSER QUESTION:\n{request.message}"""
-        answer = await chat_online(prompt, settings.openrouter_api_key, settings.openrouter_model, settings.openrouter_url)
-        return {"answer": answer, "sources": [item["source"] for item in results], "mode": "online", "model": settings.openrouter_model}
+        answer = await chat_online(prompt, settings.llm_api_key, settings.llm_model, settings.llm_base_url)
+        return {"answer": answer, "sources": [item["source"] for item in results], "mode": "online", "model": settings.llm_model}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail="Online AI request failed") from exc

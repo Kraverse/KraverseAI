@@ -5,11 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .knowledge import retrieve
 from .ollama import chat
 from .online import chat_online
 from .rag import RAGStore, ollama_embed
 
-app = FastAPI(title="KraVerse AI API", version="0.2.0")
+app = FastAPI(title="KraVerse AI API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,8 +61,10 @@ async def online_chat_endpoint(request: ChatRequest) -> dict:
     if not settings.openrouter_api_key:
         raise HTTPException(status_code=503, detail="Online provider is not configured")
     try:
-        prompt = f"""You are KraVerse AI, Kartik Katke's portfolio assistant. Answer clearly and honestly. Only state personal/project facts supplied by the user or by the portfolio knowledge context. If information is missing, say so.\n\nUSER QUESTION:\n{request.message}"""
+        results = retrieve(request.message, request.top_k or settings.top_k)
+        context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
+        prompt = f"""You are KraVerse AI, Kartik Katke's portfolio assistant. Answer clearly and honestly. Use ONLY the verified context below for personal and project facts. Do not invent missing details. If the context is insufficient, say that you do not have enough verified information.\n\nVERIFIED CONTEXT:\n{context or '(No matching verified knowledge found.)'}\n\nUSER QUESTION:\n{request.message}"""
         answer = await chat_online(prompt, settings.openrouter_api_key, settings.openrouter_model, settings.openrouter_url)
-        return {"answer": answer, "sources": [], "mode": "online", "model": settings.openrouter_model}
+        return {"answer": answer, "sources": [item["source"] for item in results], "mode": "online", "model": settings.openrouter_model}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

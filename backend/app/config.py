@@ -12,8 +12,14 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "openrouter/free"
     llm_base_url: str = "https://openrouter.ai/api/v1"
+    cors_origins: str = "*"
+    rate_limit_per_minute: int = 20
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="KRAVERSE_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="KRAVERSE_",
+        extra="ignore",
+    )
 
 
 settings = Settings()

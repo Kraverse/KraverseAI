@@ -7,7 +7,14 @@ async def chat(prompt: str, model: str, url: str) -> str:
     async with httpx.AsyncClient(timeout=180) as client:
         response = await client.post(
             f"{url.rstrip('/')}/api/chat",
-            json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                },
+            },
         )
         response.raise_for_status()
         message = response.json().get("message", {})

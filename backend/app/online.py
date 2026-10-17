@@ -4,7 +4,7 @@ import httpx
 
 
 async def chat_online(prompt: str, api_key: str, model: str, url: str) -> str:
-    async with httpx.AsyncClient(timeout=120) as client:
+    async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

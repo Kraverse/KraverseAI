@@ -108,7 +108,6 @@ async def chat_endpoint(request: Request, payload: ChatRequest) -> dict:
         # Filter weak semantic matches so unrelated chunks are less likely to mislead the model.
         results = [item for item in results if float(item.get("score", 0.0)) >= 0.25]
         context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
-        # Project-list questions need the full approved catalogue, not only top semantic chunks.
         asks_for_project_list = (
             re.search(r"\b(list|all|every|show|name|which|what are)\b", payload.message.lower())
             and re.search(r"\b(projects?|portfolio)\b", payload.message.lower())
@@ -120,8 +119,29 @@ async def chat_endpoint(request: Request, payload: ChatRequest) -> dict:
         prompt = _prompt(payload.message, context, payload.interview_mode)
         answer = await chat(prompt, settings.chat_model, settings.ollama_url)
         return {"answer": answer, "sources": [item["source"] for item in results], "mode": "local"}
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail="Local AI request failed") from exc
+    except Exception as local_exc:
+        # Hosted Render has no Ollama daemon by default. Fall back to the configured online provider.
+        if settings.llm_provider.lower() != "openrouter" or not settings.llm_api_key:
+            raise HTTPException(
+                status_code=503,
+                detail="Local Ollama is unavailable and no online provider is configured. Use /chat/online after configuring KRAVERSE_LLM_API_KEY.",
+            ) from local_exc
+        try:
+            results = retrieve(payload.message, payload.top_k or settings.top_k)
+            context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
+            asks_for_project_list = (
+                re.search(r"\b(list|all|every|show|name|which|what are)\b", payload.message.lower())
+                and re.search(r"\b(projects?|portfolio)\b", payload.message.lower())
+            )
+            project_catalogue = KNOWLEDGE_DIR / "projects.md"
+            if asks_for_project_list and project_catalogue.is_file():
+                catalogue_text = project_catalogue.read_text(encoding="utf-8")
+                context += f"\n\nSOURCE: knowledge/projects.md (complete approved project catalogue)\n{catalogue_text}"
+            prompt = _prompt(payload.message, context, payload.interview_mode)
+            answer = await chat_online(prompt, settings.llm_api_key, settings.llm_model, settings.llm_base_url)
+            return {"answer": answer, "sources": [item["source"] for item in results], "mode": "online-fallback", "model": settings.llm_model}
+        except Exception as online_exc:
+            raise HTTPException(status_code=502, detail="Local Ollama is unavailable and the online AI provider failed. Check provider configuration and logs.") from online_exc
 
 
 @app.post("/chat/online")

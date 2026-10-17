@@ -110,13 +110,13 @@ async def chat_endpoint(request: Request, payload: ChatRequest) -> dict:
         context = "\n\n".join(f"SOURCE: {item['source']}\n{item['content']}" for item in results)
         # Project-list questions need the full approved catalogue, not only top semantic chunks.
         asks_for_project_list = (
-            re.search(r"\\b(list|all|every|show|name|which|what are)\\b", payload.message.lower())
-            and re.search(r"\\b(projects?|portfolio)\\b", payload.message.lower())
+            re.search(r"\b(list|all|every|show|name|which|what are)\b", payload.message.lower())
+            and re.search(r"\b(projects?|portfolio)\b", payload.message.lower())
         )
         project_catalogue = KNOWLEDGE_DIR / "projects.md"
         if asks_for_project_list and project_catalogue.is_file():
             catalogue_text = project_catalogue.read_text(encoding="utf-8")
-            context += f"\\n\\nSOURCE: knowledge/projects.md (complete approved project catalogue)\\n{catalogue_text}"
+            context += f"\n\nSOURCE: knowledge/projects.md (complete approved project catalogue)\n{catalogue_text}"
         prompt = _prompt(payload.message, context, payload.interview_mode)
         answer = await chat(prompt, settings.chat_model, settings.ollama_url)
         return {"answer": answer, "sources": [item["source"] for item in results], "mode": "local"}
